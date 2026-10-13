@@ -5,7 +5,7 @@
  * vite.config.js), so no server address appears anywhere in the components.
  */
 
-const BASE_URL = "/api";
+const BASE_URL = import.meta.env.VITE_API_URL || "/api";
 
 /** Turns a failed response into a readable message instead of "[object Object]". */
 async function describeFailure(response) {
