@@ -1,0 +1,3 @@
+# Convenience file so that `pip install -r requirements.txt` works from inside
+# the backend directory as well as from the project root.
+-r ../requirements.txt

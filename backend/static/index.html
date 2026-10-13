@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CompilerLens</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* This is the built-in interface. It needs no build step and no Node.js,
+         so the project can always be demonstrated with Python alone.
+         The React app in /frontend is the primary UI and looks the same. */
+      :root {
+        --paper: #eef0f3; --panel: #fff; --ink: #172033; --ink-soft: #5b6779;
+        --ink-faint: #8d97a6; --rule: #d5dae2; --rule-strong: #b6bfcc;
+        --keyword: #3a3da6; --identifier: #0e6e6e; --literal: #9a5b00;
+        --operator: #7a3272; --separator: #5b6779; --invalid: #a32a22;
+        --built: #0e6e6e; --alert: #a32a22; --ok: #17694a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--paper); color: var(--ink);
+        font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 15px; line-height: 1.5;
+      }
+      button, select, textarea { font: inherit; color: inherit; }
+      :focus-visible { outline: 2px solid var(--keyword); outline-offset: 2px; }
+      .app { max-width: 1440px; margin: 0 auto; padding: 28px 24px 48px; }
+      .masthead {
+        display: flex; flex-wrap: wrap; align-items: flex-end;
+        justify-content: space-between; gap: 16px;
+        padding-bottom: 18px; border-bottom: 1px solid var(--rule-strong);
+      }
+      h1 { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.02em; }
+      .tagline { margin: 2px 0 0; color: var(--ink-soft); }
+      .milestone { margin: 0; max-width: 44ch; font-size: 13px; color: var(--ink-soft); text-align: right; }
+
+      .pipeline { display: flex; flex-wrap: wrap; gap: 10px; margin: 22px 0 24px; }
+      .phase {
+        flex: 1 1 180px; min-width: 165px; display: grid;
+        grid-template-columns: auto 1fr; column-gap: 10px;
+        padding: 12px 14px; border-radius: 4px; background: var(--panel);
+        border: 1px solid var(--rule);
+      }
+      .phase.planned { background: transparent; border: 1px dashed var(--rule-strong); }
+      .phase.passed { border-color: var(--built); box-shadow: inset 3px 0 0 var(--built); }
+      .phase.failed { border-color: var(--alert); box-shadow: inset 3px 0 0 var(--alert); }
+      .phase-order {
+        grid-row: 1 / span 2; font-family: "IBM Plex Mono", monospace;
+        font-size: 13px; font-weight: 600; color: var(--ink-faint);
+      }
+      .phase.passed .phase-order { color: var(--built); }
+      .phase-name { font-weight: 600; font-size: 14px; line-height: 1.3; }
+      .phase.planned .phase-name { color: var(--ink-soft); font-weight: 500; }
+      .phase-produces { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-faint); }
+      .phase-state { grid-column: 2; margin-top: 6px; font-size: 11px; color: var(--ink-faint); }
+      .phase.passed .phase-state { color: var(--ok); }
+      .phase.failed .phase-state { color: var(--alert); }
+
+      .workspace { display: grid; grid-template-columns: minmax(340px, 1fr) minmax(0, 1.5fr); gap: 20px; align-items: start; }
+      .column { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+      .panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; }
+      .panel-head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--rule);
+      }
+      .panel-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+      select { padding: 5px 8px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--panel); }
+
+      .editor { display: flex; font-family: "IBM Plex Mono", monospace; font-size: 14px; line-height: 1.6; }
+      .gutter {
+        display: flex; flex-direction: column; padding: 14px 10px 14px 14px;
+        text-align: right; color: var(--ink-faint); background: #f7f8fa;
+        border-right: 1px solid var(--rule); overflow: hidden; user-select: none; min-width: 44px;
+      }
+      textarea {
+        flex: 1; min-height: 210px; padding: 14px; border: 0; resize: vertical;
+        background: transparent; font-family: inherit; font-size: inherit; line-height: inherit;
+      }
+      textarea:focus { outline: none; background: #fbfcfd; }
+      .editor-actions { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--rule); }
+      .run-button { padding: 9px 18px; border: 0; border-radius: 4px; background: var(--ink); color: #fff; font-weight: 600; cursor: pointer; }
+      .run-button:disabled { background: var(--ink-faint); cursor: progress; }
+      .hint { font-size: 12px; color: var(--ink-faint); }
+
+      .example-list { list-style: none; margin: 0; padding: 0; }
+      .example-list li + li { border-top: 1px solid var(--rule); }
+      .example { display: block; width: 100%; padding: 11px 16px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+      .example:hover { background: #f7f8fa; }
+      .example-title { display: block; font-weight: 500; font-size: 14px; }
+      .example-description { display: block; font-size: 12.5px; color: var(--ink-soft); }
+
+      .statbar {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+        padding: 12px 16px; border-bottom: 1px solid var(--rule); font-size: 13px; color: var(--ink-soft);
+      }
+      .verdict { font-weight: 600; }
+      .verdict.ok { color: var(--ok); }
+      .verdict.bad { color: var(--alert); }
+      .stat strong { font-family: "IBM Plex Mono", monospace; color: var(--ink); }
+
+      .tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--rule); overflow-x: auto; }
+      .tab {
+        flex: 0 0 auto; white-space: nowrap;
+        display: flex; align-items: center; gap: 7px; padding: 10px 14px; border: 0;
+        border-bottom: 2px solid transparent; background: transparent; color: var(--ink-soft);
+        cursor: pointer; font-size: 14px;
+      }
+      .tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+      .tab-count { padding: 1px 7px; border-radius: 999px; background: #eceff3; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; }
+      .tab-count.alert { background: #f8e6e4; color: var(--alert); }
+      .tab-body { padding: 16px; min-height: 320px; }
+      .empty { margin: 0; padding: 32px 8px; color: var(--ink-soft); text-align: center; }
+      .empty.good { color: var(--ok); }
+
+      .legend { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+      .chip { display: inline-block; padding: 2px 8px; border-radius: 3px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; border: 1px solid currentColor; }
+      .chip.keyword { color: var(--keyword); }
+      .chip.identifier { color: var(--identifier); }
+      .chip.literal { color: var(--literal); }
+      .chip.operator { color: var(--operator); }
+      .chip.separator { color: var(--separator); }
+      .chip.invalid { color: var(--invalid); background: #fbeceb; }
+
+      table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+      th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule-strong); font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+      td { padding: 6px 10px; border-bottom: 1px solid #edeff3; }
+      tbody tr:hover { background: #f7f8fa; }
+      .lexeme { font-family: "IBM Plex Mono", monospace; font-weight: 500; white-space: pre; }
+      .num { width: 52px; font-family: "IBM Plex Mono", monospace; color: var(--ink-faint); font-size: 12.5px; }
+
+      pre.tree {
+        margin: 0; padding: 14px; background: #f7f8fa; border: 1px solid var(--rule);
+        border-radius: 4px; font-family: "IBM Plex Mono", monospace; font-size: 13.5px;
+        line-height: 1.7; overflow-x: auto;
+      }
+      .t-node { font-weight: 600; }
+      .t-Declaration, .t-Assignment, .t-ExpressionStatement, .t-Program { color: var(--identifier); }
+      .t-detail-operator { color: var(--operator); font-weight: 600; }
+      .t-detail-identifier { color: var(--identifier); }
+      .t-detail-literal { color: var(--literal); }
+      .t-detail-keyword { color: var(--keyword); }
+
+      .error-group h3 { margin: 0; font-size: 14px; }
+      .error-subtitle { margin: 2px 0 10px; font-size: 12.5px; color: var(--ink-soft); }
+      .error-group + .error-group { margin-top: 22px; }
+      .error-item {
+        padding: 11px 14px; border: 1px solid #e8cfcc; border-left: 3px solid var(--alert);
+        border-radius: 4px; background: #fdf7f6;
+      }
+      .error-item + .error-item { margin-top: 8px; }
+      .error-position { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--alert); }
+      .error-message { margin: 3px 0 0; font-weight: 500; }
+      .error-hint { margin: 4px 0 0; font-size: 13px; color: var(--ink-soft); }
+
+      .roadmap-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      .roadmap-list li { padding: 11px 14px; border: 1px solid var(--rule); border-left: 3px solid var(--built); border-radius: 4px; }
+      .roadmap-list.planned li { border: 1px dashed var(--rule-strong); border-left: 3px solid var(--rule-strong); }
+      .roadmap-name { font-weight: 600; margin-right: 8px; }
+      .roadmap-produces { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-faint); }
+      .roadmap-list p { margin: 4px 0 6px; font-size: 13.5px; color: var(--ink-soft); }
+      .roadmap-list code { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-faint); }
+      .roadmap section + section { margin-top: 24px; }
+      .roadmap h3 { margin: 0 0 10px; font-size: 14px; }
+      .panel-explanation { margin: 0 0 12px; color: var(--ink-soft); font-size: 13px; }
+      .table-wrap { width: 100%; overflow-x: auto; }
+      .state-good, .state-bad { display: inline-block; padding: 2px 7px; border: 1px solid currentColor; border-radius: 3px; font-size: 12px; }
+      .state-good { color: var(--ok); } .state-bad { color: var(--alert); }
+      .ir-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; color: var(--ink-soft); font-size: 13px; }
+      .ir-summary strong { color: var(--ink); font-family: "IBM Plex Mono", monospace; }
+      .ir-summary button { margin-left: auto; padding: 4px 8px; border: 1px solid var(--rule-strong); border-radius: 3px; background: white; cursor: pointer; }
+      .ir-code { margin: 0 0 12px; padding: 10px 0; border: 1px solid var(--rule); border-radius: 4px; background: #f7f8fa; overflow-x: auto; font-family: "IBM Plex Mono", monospace; font-size: 13.5px; }
+      .ir-line { display: grid; grid-template-columns: 48px minmax(180px, 1fr) 72px; gap: 12px; padding: 5px 12px; align-items: baseline; }
+      .ir-line:hover { background: #eef1f5; } .ir-number { color: var(--ink-faint); text-align: right; }
+      .ir-line code { white-space: pre; color: var(--identifier); } .ir-source-line { color: var(--ink-faint); font-size: 11.5px; text-align: right; }
+
+      .stage-result h3 { margin: 16px 0 8px; font-size: 13.5px; font-weight: 600; }
+      .stage-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; color: var(--ink-soft); font-size: 13px; }
+      .stage-summary strong { color: var(--ink); font-family: "IBM Plex Mono", monospace; }
+      .stage-summary .link-button { margin-left: auto; padding: 4px 8px; border: 1px solid var(--rule-strong); border-radius: 3px; background: white; cursor: pointer; }
+      .stage-code { margin: 0; padding: 12px 14px; overflow: auto; border: 1px solid var(--rule); border-radius: 4px; background: #f7f8fa; font-family: "IBM Plex Mono", monospace; font-size: 13px; line-height: 1.75; white-space: pre; }
+      .target-code { color: var(--identifier); }
+      .optimisation-list { margin: 0; padding-left: 24px; }
+      .optimisation-list li { padding: 4px 0; overflow-wrap: anywhere; }
+      .empty.compact { padding: 8px; text-align: left; }
+
+      .banner { margin-bottom: 18px; padding: 12px 16px; border: 1px solid #e8cfcc; border-left: 3px solid var(--alert); border-radius: 4px; background: #fdf7f6; font-size: 14px; }
+      .colophon { margin-top: 32px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--ink-faint); }
+      @media (max-width: 1000px) { .workspace { grid-template-columns: 1fr; } .milestone { text-align: left; } }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="masthead">
+        <div>
+          <h1>CompilerLens</h1>
+          <p class="tagline">Watch a program move through compiler phases.</p>
+        </div>
+        <p class="milestone">
+          All six educational compiler phases run for the supported declaration-and-expression grammar.
+        </p>
+      </header>
+
+      <section class="pipeline" id="pipeline" aria-label="Compiler phases"></section>
+      <div id="banner"></div>
+
+      <main class="workspace">
+        <div class="column">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Source code</h2>
+              <select id="language" aria-label="Language">
+                <option value="c">C</option>
+                <option value="cpp">C++</option>
+                <option value="java">Java</option>
+              </select>
+            </div>
+            <div class="editor">
+              <div class="gutter" id="gutter" aria-hidden="true"></div>
+              <textarea id="source" spellcheck="false" aria-label="Source code"></textarea>
+            </div>
+            <div class="editor-actions">
+              <button class="run-button" id="run">Compile / Analyze</button>
+              <span class="hint">or press Ctrl + Enter</span>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><h2>Example programs</h2></div>
+            <ul class="example-list" id="examples"></ul>
+          </section>
+        </div>
+
+        <div class="column">
+          <section class="panel">
+            <div class="statbar" id="statbar"></div>
+            <div class="tabs" id="tabs"></div>
+            <div class="tab-body" id="tabBody"></div>
+          </section>
+        </div>
+      </main>
+
+      <footer class="colophon">
+        Compiler Design Lab project &middot; FastAPI backend &middot; six educational phases &middot; built-in interface
+      </footer>
+    </div>
+
+    <script>
+      "use strict";
+
+      var DEFAULT_PROGRAM = "int a = 10;\nint b = 20;\nint c = a + 2 * 3;\n";
+
+      var state = { result: null, pipeline: [], examples: [], tab: "tokens", busy: false };
+
+      function el(id) {
+        return document.getElementById(id);
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+
+      // ---- rendering ---------------------------------------------------
+      function renderGutter() {
+        var total = el("source").value.split("\n").length;
+        var html = "";
+        for (var i = 1; i <= total; i += 1) html += "<span>" + i + "</span>";
+        el("gutter").innerHTML = html;
+      }
+
+      function renderPipeline() {
+        el("pipeline").innerHTML = state.pipeline
+          .map(function (phase) {
+            var planned = phase.status === "planned";
+            var cls = planned ? "planned" : phase.ok === false ? "failed" : phase.ran ? "passed" : "";
+            var label = planned
+              ? "not built yet"
+              : phase.ok === false
+              ? "errors found"
+              : phase.ran
+              ? "completed"
+              : "ready";
+            return (
+              '<article class="phase ' + cls + '" title="' + escapeHtml(phase.summary) + '">' +
+              '<span class="phase-order">' + phase.order + "</span>" +
+              "<span>" +
+              '<span class="phase-name">' + escapeHtml(phase.name) + "</span><br />" +
+              '<span class="phase-produces">' + escapeHtml(phase.produces) + "</span>" +
+              "</span>" +
+              '<span class="phase-state">' + label + "</span>" +
+              "</article>"
+            );
+          })
+          .join("");
+      }
+
+      function renderExamples() {
+        el("examples").innerHTML = state.examples
+          .map(function (example, index) {
+            return (
+              '<li><button class="example" data-index="' + index + '">' +
+              '<span class="example-title">' + escapeHtml(example.title) + "</span>" +
+              '<span class="example-description">' + escapeHtml(example.description) + "</span>" +
+              "</button></li>"
+            );
+          })
+          .join("");
+      }
+
+      function renderStatBar() {
+        var result = state.result;
+        if (!result || !result.statistics) {
+          el("statbar").innerHTML = "";
+          return;
+        }
+        var s = result.statistics;
+        var pairs = [
+          ["lines", s.line_count],
+          ["tokens", s.token_count],
+          ["AST nodes", s.ast_node_count],
+          ["tree depth", s.ast_depth]
+        ];
+        el("statbar").innerHTML =
+          '<span class="verdict ' + (result.success ? "ok" : "bad") + '">' +
+          (result.success ? "Analysis completed" : "Problems found") +
+          "</span>" +
+          pairs
+            .map(function (pair) {
+              return '<span class="stat"><strong>' + pair[1] + "</strong> " + pair[0] + "</span>";
+            })
+            .join("");
+      }
+
+      function renderTabs() {
+        var result = state.result;
+        var errorCount = result ? result.lexical_errors.length + result.syntax_errors.length + result.semantic_errors.length : 0;
+        var tabs = [
+          { id: "tokens", label: "Tokens", count: result ? result.tokens.length : 0 },
+          { id: "ast", label: "Syntax tree", count: result && result.statistics ? result.statistics.ast_node_count : 0 },
+          { id: "symbols", label: "Symbol table", count: result ? result.symbol_table.length : 0 },
+          { id: "intermediate", label: "Intermediate code", count: result ? result.intermediate_code.length : 0 },
+          { id: "optimization", label: "Optimization", count: result ? result.optimized_code.length : 0 },
+          { id: "codegen", label: "Code generation", count: result ? result.target_instruction_count : 0 },
+          { id: "errors", label: "Errors", count: errorCount, alert: true },
+          { id: "roadmap", label: "Pipeline status", count: 0 }
+        ];
+        el("tabs").innerHTML = tabs
+          .map(function (tab) {
+            return (
+              '<button class="tab ' + (state.tab === tab.id ? "active" : "") + '" data-tab="' + tab.id + '">' +
+              escapeHtml(tab.label) +
+              (tab.count > 0
+                ? '<span class="tab-count ' + (tab.alert ? "alert" : "") + '">' + tab.count + "</span>"
+                : "") +
+              "</button>"
+            );
+          })
+          .join("");
+      }
+
+      function renderTokens() {
+        var tokens = state.result ? state.result.tokens : [];
+        if (!tokens.length) return '<p class="empty">No tokens yet. Enter a program and run the analysis.</p>';
+
+        var counts = {};
+        tokens.forEach(function (token) {
+          counts[token.category] = (counts[token.category] || 0) + 1;
+        });
+
+        var legend = Object.keys(counts)
+          .map(function (category) {
+            return '<span class="chip ' + category + '">' + category + " <strong>" + counts[category] + "</strong></span>";
+          })
+          .join("");
+
+        var rows = tokens
+          .map(function (token) {
+            return (
+              '<tr><td class="num">' + token.position + "</td>" +
+              '<td class="lexeme">' + escapeHtml(token.lexeme) + "</td>" +
+              '<td><span class="chip ' + token.category + '">' + token.type + "</span></td>" +
+              '<td class="num">' + token.line + '</td><td class="num">' + token.column + "</td></tr>"
+            );
+          })
+          .join("");
+
+        return (
+          '<div class="legend">' + legend + "</div>" +
+          '<table><thead><tr><th class="num">#</th><th>Lexeme</th><th>Token type</th>' +
+          '<th class="num">Line</th><th class="num">Col</th></tr></thead><tbody>' + rows + "</tbody></table>"
+        );
+      }
+
+      // Draws the tree using the same box-drawing characters as the backend.
+      function renderTreeLines(node, prefix, isLast, isRoot, lines) {
+        var detailClasses = {
+          BinaryExpression: "operator",
+          UnaryExpression: "operator",
+          Identifier: "identifier",
+          NumberLiteral: "literal",
+          Type: "keyword"
+        };
+        var detailClass = detailClasses[node.node_type] || "";
+        var label = '<span class="t-node t-' + node.node_type + '">' + escapeHtml(node.label) + "</span>";
+        var detail = node.detail
+          ? ': <span class="t-detail-' + detailClass + '">' + escapeHtml(node.detail) + "</span>"
+          : "";
+
+        var childPrefix;
+        if (isRoot) {
+          lines.push(label + detail);
+          childPrefix = "";
+        } else {
+          lines.push(prefix + (isLast ? "\u2514\u2500\u2500 " : "\u251c\u2500\u2500 ") + label + detail);
+          childPrefix = prefix + (isLast ? "    " : "\u2502   ");
+        }
+
+        var children = node.children || [];
+        children.forEach(function (child, index) {
+          renderTreeLines(child, childPrefix, index === children.length - 1, false, lines);
+        });
+      }
+
+      function renderAst() {
+        var result = state.result;
+        if (!result || !result.ast) return '<p class="empty">No tree yet. Run the analysis to build one.</p>';
+        if (!result.ast.children.length) {
+          return '<p class="empty">The parser could not build a tree from this program. Check the Errors tab to see why.</p>';
+        }
+        var lines = [];
+        renderTreeLines(result.ast, "", true, true, lines);
+        return '<pre class="tree">' + lines.join("\n") + "</pre>";
+      }
+
+      function renderSymbols() {
+        var symbols = state.result ? state.result.symbol_table : [];
+        if (!symbols.length) return '<p class="empty">No symbol-table entries. Run a valid program with variable declarations.</p>';
+        var rows = symbols.map(function (symbol) {
+          return '<tr><td class="lexeme">' + escapeHtml(symbol.name) + '</td>' +
+            '<td><span class="chip keyword">' + escapeHtml(symbol.type) + '</span></td>' +
+            '<td>' + escapeHtml(symbol.scope) + '</td>' +
+            '<td class="num">' + symbol.line + ':' + symbol.column + '</td>' +
+            '<td>' + (symbol.initialised ? '<span class="state-good">Yes</span>' : '<span class="state-bad">No</span>') + '</td></tr>';
+        }).join('');
+        return '<p class="panel-explanation">Each row represents a declared variable and its final initialisation status.</p>' +
+          '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Scope</th><th>Declared at</th><th>Initialised</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      }
+
+      function renderIntermediate() {
+        var result = state.result;
+        var instructions = result ? result.intermediate_code : [];
+        if (!instructions.length) return '<p class="empty">No intermediate code was generated. Resolve lexical, syntax, and semantic errors first.</p>';
+        var rows = instructions.map(function (item) {
+          return '<span class="ir-line"><span class="ir-number">' + String(item.index).padStart(2, '0') + '</span>' +
+            '<code>' + escapeHtml(item.instruction) + '</code><span class="ir-source-line">line ' + item.line + '</span></span>';
+        }).join('');
+        return '<div class="ir-summary"><span><strong>' + result.intermediate_instruction_count + '</strong> instructions</span>' +
+          '<span><strong>' + result.temporary_count + '</strong> temporary variables</span>' +
+          '<button class="link-button" id="copyIR" type="button">Copy code</button></div>' +
+          '<pre class="ir-code">' + rows + '</pre>' +
+          '<p class="panel-explanation">Each instruction performs one simple operation. Temporary variables store expression results.</p>';
+      }
+
+      function renderOptimization() {
+        var result = state.result;
+        if (!result || !result.optimized_code || !result.optimized_code.length) {
+          return '<p class="empty">No optimised IR is available. Fix lexical, syntax, or semantic errors first.</p>';
+        }
+        var notes = result.optimization_notes || [];
+        var noteHtml = notes.length
+          ? '<ol class="optimisation-list">' + notes.map(function (note) { return '<li>' + escapeHtml(note) + '</li>'; }).join('') + '</ol>'
+          : '<p class="empty compact">No rewrite was needed for this program.</p>';
+        return '<div class="stage-summary"><span><strong>' + result.optimized_instruction_count + '</strong> optimised instructions</span>' +
+          '<button class="link-button" id="copyOptimized" type="button">Copy optimised code</button></div>' +
+          '<h3>Original three-address code</h3><pre class="stage-code">' + escapeHtml(result.intermediate_code_text || '(no instructions)') + '</pre>' +
+          '<h3>Optimised intermediate representation</h3><pre class="stage-code">' + escapeHtml(result.optimized_code_text || '(no instructions)') + '</pre>' +
+          '<h3>Optimisations applied</h3>' + noteHtml +
+          '<p class="panel-explanation">The optimizer applies literal constant folding, temporary propagation, algebraic simplification, and removal of unused temporaries. It does not globally replace named variables with constants.</p>';
+      }
+
+      function renderCodegen() {
+        var result = state.result;
+        if (!result || !result.target_code || !result.target_code.length) {
+          return '<p class="empty">No target code is available. Fix lexical, syntax, or semantic errors first.</p>';
+        }
+        return '<div class="stage-summary"><span><strong>' + result.target_instruction_count + '</strong> target instructions</span>' +
+          '<span>' + escapeHtml(result.target_name || '') + '</span>' +
+          '<button class="link-button" id="copyTarget" type="button">Copy target code</button></div>' +
+          '<pre class="stage-code target-code">' + escapeHtml(result.target_code_text || '') + '</pre>' +
+          '<p class="panel-explanation">' + escapeHtml(result.target_code_note || '') + '</p>' +
+          '<p class="panel-explanation">This is readable pseudo-assembly for a small educational register machine, not native x86/ARM assembly or an executable binary.</p>';
+      }
+
+      function renderErrors() {
+        var result = state.result;
+        if (!result) return '<p class="empty">Run the analysis first.</p>';
+
+        var groups = [
+          { title: "Lexical errors", subtitle: "Found while splitting the text into tokens", items: result.lexical_errors },
+          { title: "Syntax errors", subtitle: "Found while checking the tokens against the grammar", items: result.syntax_errors },
+          { title: "Semantic errors", subtitle: "Found while checking declarations, initialisation and type compatibility", items: result.semantic_errors }
+        ].filter(function (group) {
+          return group.items.length > 0;
+        });
+
+        if (!groups.length) {
+          return '<p class="empty good">No lexical, syntax, or semantic errors. The program passed the implemented compiler checks.</p>';
+        }
+
+        return groups
+          .map(function (group) {
+            return (
+              '<section class="error-group"><h3>' + group.title + "</h3>" +
+              '<p class="error-subtitle">' + group.subtitle + "</p>" +
+              group.items
+                .map(function (error) {
+                  return (
+                    '<div class="error-item">' +
+                    '<span class="error-position">line ' + error.line + ", col " + error.column + "</span>" +
+                    '<p class="error-message">' + escapeHtml(error.message) + "</p>" +
+                    (error.hint ? '<p class="error-hint">' + escapeHtml(error.hint) + "</p>" : "") +
+                    "</div>"
+                  );
+                })
+                .join("") +
+              "</section>"
+            );
+          })
+          .join("");
+      }
+
+      function renderRoadmap() {
+        function build(phases, planned) {
+          return (
+            '<ul class="roadmap-list ' + (planned ? "planned" : "") + '">' +
+            phases
+              .map(function (phase) {
+                return (
+                  '<li><span class="roadmap-name">' + escapeHtml(phase.name) + "</span>" +
+                  '<span class="roadmap-produces">' + (planned ? "will produce " : "produces ") +
+                  escapeHtml(phase.produces) + "</span>" +
+                  "<p>" + escapeHtml(phase.summary) + "</p><code>" + escapeHtml(phase.module) + "</code></li>"
+                );
+              })
+              .join("") +
+            "</ul>"
+          );
+        }
+
+        var built = state.pipeline.filter(function (p) {
+          return p.status === "implemented";
+        });
+        var planned = state.pipeline.filter(function (p) {
+          return p.status === "planned";
+        });
+
+        return (
+          '<div class="roadmap"><section><h3>Implemented phases</h3>' + build(built, false) + "</section>" +
+          (planned.length ? "<section><h3>Planned phases</h3>" + build(planned, true) + "</section>" : "") + "</div>"
+        );
+      }
+
+      function renderTabBody() {
+        var views = { tokens: renderTokens, ast: renderAst, symbols: renderSymbols, intermediate: renderIntermediate, optimization: renderOptimization, codegen: renderCodegen, errors: renderErrors, roadmap: renderRoadmap };
+        el("tabBody").innerHTML = views[state.tab]();
+      }
+
+      function render() {
+        renderPipeline();
+        renderStatBar();
+        renderTabs();
+        renderTabBody();
+      }
+
+      // ---- data --------------------------------------------------------
+      function analyze() {
+        if (state.busy) return Promise.resolve();
+        state.busy = true;
+        el("run").disabled = true;
+        el("run").textContent = "Analysing\u2026";
+        el("banner").innerHTML = "";
+
+        return fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_code: el("source").value, language: el("language").value })
+        })
+          .then(function (response) {
+            if (!response.ok) {
+              return response
+                .json()
+                .catch(function () {
+                  return {};
+                })
+                .then(function (body) {
+                  var detail = body.detail;
+                  if (Array.isArray(detail)) {
+                    detail = detail
+                      .map(function (item) {
+                        return item.msg;
+                      })
+                      .join("; ");
+                  }
+                  throw new Error(detail || "The server replied with status " + response.status + ".");
+                });
+            }
+            return response.json();
+          })
+          .then(function (data) {
+            state.result = data;
+            state.pipeline = data.phases;
+            state.tab = data.success ? "tokens" : "errors";
+          })
+          .catch(function (error) {
+            el("banner").innerHTML =
+              '<div class="banner"><strong>Analysis failed.</strong> ' + escapeHtml(error.message) + "</div>";
+            state.result = null;
+          })
+          .then(function () {
+            state.busy = false;
+            el("run").disabled = false;
+            el("run").textContent = "Compile / Analyze";
+            render();
+          });
+      }
+
+      function loadStaticData() {
+        return Promise.all([
+          fetch("/api/pipeline").then(function (r) {
+            return r.json();
+          }),
+          fetch("/api/examples").then(function (r) {
+            return r.json();
+          })
+        ])
+          .then(function (results) {
+            state.pipeline = results[0];
+            state.examples = results[1];
+            renderExamples();
+            renderPipeline();
+          })
+          .catch(function () {
+            /* the analyse call will surface any connection problem */
+          });
+      }
+
+      // ---- wiring ------------------------------------------------------
+      el("source").value = DEFAULT_PROGRAM;
+      renderGutter();
+
+      el("source").addEventListener("input", renderGutter);
+      el("source").addEventListener("scroll", function (event) {
+        el("gutter").scrollTop = event.target.scrollTop;
+      });
+      el("source").addEventListener("keydown", function (event) {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          analyze();
+        }
+      });
+      el("run").addEventListener("click", function () {
+        analyze();
+      });
+      el("language").addEventListener("change", function () {
+        analyze();
+      });
+
+      el("tabs").addEventListener("click", function (event) {
+        var button = event.target.closest("[data-tab]");
+        if (!button) return;
+        state.tab = button.getAttribute("data-tab");
+        renderTabs();
+        renderTabBody();
+      });
+
+      el("tabBody").addEventListener("click", function (event) {
+        if (!state.result || !navigator.clipboard || !navigator.clipboard.writeText) return;
+        var code = null;
+        if (event.target.closest("#copyIR")) code = state.result.intermediate_code_text || "";
+        if (event.target.closest("#copyOptimized")) code = state.result.optimized_code_text || "";
+        if (event.target.closest("#copyTarget")) code = state.result.target_code_text || "";
+        if (code !== null) navigator.clipboard.writeText(code).catch(function () {});
+      });
+
+      el("examples").addEventListener("click", function (event) {
+        var button = event.target.closest("[data-index]");
+        if (!button) return;
+        var example = state.examples[Number(button.getAttribute("data-index"))];
+        el("source").value = example.source_code;
+        el("language").value = example.language;
+        renderGutter();
+        analyze();
+      });
+
+      loadStaticData().then(analyze);
+    </script>
+  </body>
+</html>

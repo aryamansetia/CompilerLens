@@ -1,0 +1,11 @@
+# CompilerLens backend dependencies
+#
+# Install with:
+#     pip install -r requirements.txt
+#
+# Versions are lower bounds rather than exact pins so that a slightly newer
+# release on your machine still works.
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
